@@ -21,12 +21,14 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/string.h>
+#include <linux/version.h>
 #include "lddbus.h"
 
 MODULE_AUTHOR("Jonathan Corbet");
 MODULE_LICENSE("Dual BSD/GPL");
 static char *Version = "$Revision: 1.9 $";
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28)
 /*
  * Respond to hotplug events.
  */
@@ -40,13 +42,39 @@ static int ldd_hotplug(struct device *dev, char **envp, int num_envp,
 	envp[1] = NULL;
 	return 0;
 }
+#else
+/*
+ * Respond to uevents.
+ */
+static int ldd_uevent(struct device *dev, struct kobj_uevent_env *env)
+{
+	struct ldd_device *ldddev;
+
+	if (!dev)
+		return -ENODEV;
+
+	ldddev = to_ldd_device(dev);
+	if (!ldddev)
+		return -ENODEV;
+
+	if (add_uevent_var(env, "LDDBUS_VERSION=%s", dev_name(&ldddev->dev)))
+		return -ENOMEM;
+
+	return 0;
+}
+#endif
 
 /*
  * Match LDD devices to drivers.  Just do a simple name test.
  */
 static int ldd_match(struct device *dev, struct device_driver *driver)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28)
 	return !strncmp(dev->bus_id, driver->name, strlen(driver->name));
+#else
+	struct ldd_device *ldddev = to_ldd_device(dev);
+	return !strncmp(dev_name(&ldddev->dev), driver->name, strlen(driver->name));
+#endif
 }
 
 
@@ -57,10 +85,14 @@ static void ldd_bus_release(struct device *dev)
 {
 	printk(KERN_DEBUG "lddbus release\n");
 }
-	
+
 struct device ldd_bus = {
-	.bus_id   = "ldd0",
-	.release  = ldd_bus_release
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28)
+	.bus_id	    = "ldd0",
+#else
+	.init_name  = "ldd0",
+#endif
+	.release    = ldd_bus_release
 };
 
 
@@ -70,7 +102,11 @@ struct device ldd_bus = {
 struct bus_type ldd_bus_type = {
 	.name = "ldd",
 	.match = ldd_match,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28)
 	.hotplug  = ldd_hotplug,
+#else
+	.uevent = ldd_uevent,
+#endif
 };
 
 /*
@@ -102,7 +138,11 @@ int register_ldd_device(struct ldd_device *ldddev)
 	ldddev->dev.bus = &ldd_bus_type;
 	ldddev->dev.parent = &ldd_bus;
 	ldddev->dev.release = ldd_dev_release;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28)
 	strncpy(ldddev->dev.bus_id, ldddev->name, BUS_ID_SIZE);
+#else
+	ldddev->name = kasprintf(GFP_KERNEL, "%s", dev_name(&ldddev->dev));
+#endif
 	return device_register(&ldddev->dev);
 }
 EXPORT_SYMBOL(register_ldd_device);
@@ -112,6 +152,8 @@ void unregister_ldd_device(struct ldd_device *ldddev)
 	device_unregister(&ldddev->dev);
 }
 EXPORT_SYMBOL(unregister_ldd_device);
+
+
 
 /*
  * Crude driver interface.
@@ -125,12 +167,12 @@ static ssize_t show_version(struct device_driver *driver, char *buf)
 	sprintf(buf, "%s\n", ldriver->version);
 	return strlen(buf);
 }
-		
+
 
 int register_ldd_driver(struct ldd_driver *driver)
 {
 	int ret;
-	
+
 	driver->driver.bus = &ldd_bus_type;
 	ret = driver_register(&driver->driver);
 	if (ret)
