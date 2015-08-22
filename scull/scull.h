@@ -90,7 +90,7 @@ struct scull_dev {
 	int qset;                 /* the current array size */
 	unsigned long size;       /* amount of data stored here */
 	unsigned int access_key;  /* used by sculluid and scullpriv */
-	struct semaphore sem;     /* mutual exclusion semaphore     */
+	struct mutex mut;         /* used to make the code atomic*/
 	struct cdev cdev;	  /* Char device structure		*/
 };
 
