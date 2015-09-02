@@ -236,7 +236,7 @@ static unsigned int scull_p_poll(struct file *filp, poll_table *wait)
 	 * if "wp" is right behind "rp" and empty if the
 	 * two are equal.
 	 */
-	mutex_lock(&dev->sem);
+	mutex_lock(&dev->mut);
 	poll_wait(filp, &dev->inq,  wait);
 	poll_wait(filp, &dev->outq, wait);
 	if (dev->rp != dev->wp)
@@ -367,7 +367,7 @@ int scull_p_init(dev_t firstdev)
 		scull_p_setup_cdev(scull_p_devices + i, i);
 	}
 #ifdef SCULL_DEBUG
-	create_proc_read_entry("scullpipe", 0, NULL, scull_read_p_mem, NULL);
+	proc_create_data("scullpipe", 0, NULL, scull_read_p_mem, NULL);
 #endif
 	return scull_p_nr_devs;
 }
